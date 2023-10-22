@@ -1,6 +1,5 @@
 import pygame as pg
 
-import random
 from OpenGL.GL import *
 import numpy as np
 
@@ -13,7 +12,6 @@ class Cube:
     def __init__(self, position, eulers):
         self.position = np.array(position, dtype=np.float32)
         self.eulers = np.array(eulers, dtype=np.float32)
-
 
 
 class App:
@@ -33,16 +31,16 @@ class App:
         glUseProgram(self.shader)
         glUniform1i(glGetUniformLocation(self.shader, "imageTexture"), 0)
         self.cube = Cube(
-            position = [0, 0, -3],
-            eulers = [0, 0, 0]
+            position=[0, 0, -3],
+            eulers=[0, 0, 0]
         )
 
-        self.cube_mesh = CubeMesh()
+        self.cube_mesh = CubeMesh("models/cube.obj")
 
         self.wood_texture = Material("gfx/wood.jpeg")
 
         projection_transform = pyrr.matrix44.create_perspective_projection(
-            fovy=45, aspect=640/480,
+            fovy=45, aspect=640 / 480,
             near=0.1, far=10, dtype=np.float32
         )
 
@@ -85,8 +83,6 @@ class App:
             if self.cube.eulers[2] >= 360:
                 self.cube.eulers[2] -= 360
 
-
-
             # refresh screen
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
@@ -127,74 +123,96 @@ class App:
 
 class CubeMesh:
 
-    def __init__(self):
-        # x, y, z, s, t
-        self.vertices = (
-            -0.5, -0.5, -0.5, 0, 0,
-            0.5, -0.5, -0.5, 1, 0,
-            0.5, 0.5, -0.5, 1, 1,
-
-            0.5, 0.5, -0.5, 1, 1,
-            -0.5, 0.5, -0.5, 0, 1,
-            -0.5, -0.5, -0.5, 0, 0,
-
-            -0.5, -0.5, 0.5, 0, 0,
-            0.5, -0.5, 0.5, 1, 0,
-            0.5, 0.5, 0.5, 1, 1,
-
-            0.5, 0.5, 0.5, 1, 1,
-            -0.5, 0.5, 0.5, 0, 1,
-            -0.5, -0.5, 0.5, 0, 0,
-
-            -0.5, 0.5, 0.5, 1, 0,
-            -0.5, 0.5, -0.5, 1, 1,
-            -0.5, -0.5, -0.5, 0, 1,
-
-            -0.5, -0.5, -0.5, 0, 1,
-            -0.5, -0.5, 0.5, 0, 0,
-            -0.5, 0.5, 0.5, 1, 0,
-
-            0.5, 0.5, 0.5, 1, 0,
-            0.5, 0.5, -0.5, 1, 1,
-            0.5, -0.5, -0.5, 0, 1,
-
-            0.5, -0.5, -0.5, 0, 1,
-            0.5, -0.5, 0.5, 0, 0,
-            0.5, 0.5, 0.5, 1, 0,
-
-            -0.5, -0.5, -0.5, 0, 1,
-            0.5, -0.5, -0.5, 1, 1,
-            0.5, -0.5, 0.5, 1, 0,
-
-            0.5, -0.5, 0.5, 1, 0,
-            -0.5, -0.5, 0.5, 0, 0,
-            -0.5, -0.5, -0.5, 0, 1,
-
-            -0.5, 0.5, -0.5, 0, 1,
-            0.5, 0.5, -0.5, 1, 1,
-            0.5, 0.5, 0.5, 1, 0,
-
-            0.5, 0.5, 0.5, 1, 0,
-            -0.5, 0.5, 0.5, 0, 0,
-            -0.5, 0.5, -0.5, 0, 1
-        )
-
-        self.vertex_count = len(self.vertices) // 5
-
-        self.vertices = np.array(self.vertices, dtype=np.float32)
-
+    def __init__(self, filename):
+        # x, y, z, s, t, nx, ny, nz
+        vertices = self.load_mesh(filename)
+        self.vertex_count = len(vertices) // 8
+        vertices = np.array(vertices, dtype=np.float32)
 
         self.vao = glGenVertexArrays(1)
         glBindVertexArray(self.vao)
 
+        # Vertices
         self.vbo = glGenBuffers(1)
         glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, self.vertices, GL_STATIC_DRAW)
-
+        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
+        # position
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 20, ctypes.c_void_p(0))
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(0))
+        # texture
         glEnableVertexAttribArray(1)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 20, ctypes.c_void_p(12))
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(12))
+
+    def load_mesh(self, filename: str) -> list[float]:
+
+        v = []
+        vt = []
+        vn = []
+
+        vertices = []
+
+        with open(filename, "r") as f:
+
+            line: str = f.readline()
+
+            while line:
+                words = line.split(' ')
+                if words[0] == 'v':
+                    v.append(self.read_vertex_data(words))
+                elif words[0] == 'vt':
+                    vt.append(self.read_texcoord_data(words))
+                elif words[0] == 'vn':
+                    vn.append(self.read_normal_data(words))
+                elif words[0] == 'f':
+                    self.read_face_data(words, v, vt, vn, vertices)
+                line = f.readline()
+
+        return vertices
+
+    def read_vertex_data(self, words: list[str]) -> list[float]:
+        return [
+            float(words[1]),
+            float(words[2]),
+            float(words[3])
+        ]
+
+    def read_texcoord_data(self, words: list[str]) -> list[float]:
+        return [
+            float(words[1]),
+            float(words[2])
+        ]
+
+    def read_normal_data(self, words: list[str]) -> list[float]:
+        return [
+            float(words[1]),
+            float(words[2]),
+            float(words[3])
+        ]
+
+    def read_face_data(self,
+                       words: list[str],
+                       v: list[list[float]], vt: list[list[float]],
+                       vn: list[list[float]], vertices: list[float]) -> None:
+        triangle_count = len(words) - 3
+
+        for i in range(triangle_count):
+            self.make_corner(words[1], v, vt, vn, vertices)
+            self.make_corner(words[2 + i], v, vt, vn, vertices)
+            self.make_corner(words[3 + i], v, vt, vn, vertices)
+
+    def make_corner(self, corner_description: str,
+                    v: list[list[float]], vt: list[list[float]],
+                    vn: list[list[float]], vertices: list[float]):
+        v_vt_vn = corner_description.split('/')
+
+        for element in v[int(v_vt_vn[0]) - 1]:
+            vertices.append(element)
+
+        for element in vt[int(v_vt_vn[1]) - 1]:
+            vertices.append(element)
+
+        for element in vn[int(v_vt_vn[2]) - 1]:
+            vertices.append(element)
 
     def destroy(self):
         glDeleteVertexArrays(1, (self.vao,))
